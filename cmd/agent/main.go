@@ -103,7 +103,7 @@ func main() {
 
 	for{
 		go sendMetric(metrics, pollCount)
-		time.Sleep(time.Duration(flags.flagRepotInterval) * time.Second)
+		time.Sleep(time.Duration(flags.flagReportInterval) * time.Second)
 	}
 
 

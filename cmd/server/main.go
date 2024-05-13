@@ -37,8 +37,9 @@ func main() {
 	r.Post("/update/{metricType}/{name}/{value}", handleWrongType)
 	r.Get("/value/{metricType}/{name}", giveValue)
 
+	parseFlagsServer()
 
-	log.Fatal(http.ListenAndServe(":8080", r))
+	log.Fatal(http.ListenAndServe(flagRunAddr, r))
 }
 
 func giveHTML(w http.ResponseWriter, r *http.Request){

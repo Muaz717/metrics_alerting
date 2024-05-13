@@ -13,7 +13,7 @@ import (
 const (
     pollInterval   = 2
     reportInterval = 10
-    serverAddress  = "http://localhost:8080"
+    serverAddress  = "http://"
 )
 
 var pollCount int64
@@ -59,7 +59,7 @@ func updateMetrics(metrics *map[string]float64) {
             "RandomValue":  randomValue,
         }
 
-		time.Sleep(pollInterval * time.Second)
+		time.Sleep(time.Duration(flags.flagPollInterval) * time.Second)
 	}
 }
 
@@ -67,7 +67,7 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 	client := resty.New()
 
 	for metricName, value := range metrics{
-		url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress, metricName, value)
+		url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress+flags.flagRunAddr, metricName, value)
 
 		resp, err := client.R().
 			SetHeader("Content-Type", "text/plain").
@@ -81,7 +81,7 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 		log.Println(resp.StatusCode())
 	}
 
-	url1 := fmt.Sprintf("%s/update/counter/PollCount/%d", serverAddress, pollCount)
+	url1 := fmt.Sprintf("%s/update/counter/PollCount/%d", serverAddress+flags.flagRunAddr, pollCount)
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "text/plain").
@@ -97,12 +97,14 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 
 func main() {
 	metrics := map[string]float64{}
+	parseFlagsAgent()
 
 	go updateMetrics(&metrics)
 
 	for{
 		go sendMetric(metrics, pollCount)
-		time.Sleep(reportInterval * time.Second)
+		time.Sleep(time.Duration(flags.flagRepotInterval) * time.Second)
 	}
+
 
 }

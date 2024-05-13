@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"math/rand"
-	"net/http"
 	"runtime"
 	"time"
+
+	`github.com/go-resty/resty/v2`
 )
 
 const (
@@ -16,7 +16,8 @@ const (
     serverAddress  = "http://localhost:8080"
 )
 
-
+var pollCount int64
+var randomValue = 0.0
 
 func updateMetrics(metrics *map[string]float64) {
 	metric := new(runtime.MemStats)
@@ -61,51 +62,38 @@ func updateMetrics(metrics *map[string]float64) {
 		time.Sleep(pollInterval * time.Second)
 	}
 }
+
 func sendMetric(metrics map[string]float64, pollCount int64) {
+	client := resty.New()
 
 	for metricName, value := range metrics{
-
 		url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress, metricName, value)
 
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(nil))
+		resp, err := client.R().
+			SetHeader("Content-Type", "text/plain").
+			Post(url)
+
 		if err != nil{
 			log.Println("Error sending metric:", err)
 			return
 		}
-		req.Header.Set("Content-Type", "text/plain")
 
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-            log.Println("Error sending metric:", err)
-            return
-        }
-		log.Println(resp)
-		defer resp.Body.Close()
-
-
+		log.Println(resp.StatusCode())
 	}
 
 	url1 := fmt.Sprintf("%s/update/counter/PollCount/%d", serverAddress, pollCount)
 
-	req, err := http.NewRequest(http.MethodPost, url1, bytes.NewBuffer(nil))
+	resp, err := client.R().
+		SetHeader("Content-Type", "text/plain").
+		Post(url1)
+
 	if err != nil{
 		log.Println("Error sending metric:", err)
 		return
 	}
-	req.Header.Set("Content-Type", "text/plain")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-        log.Println("Error sending metric:", err)
-        return
-    }
-	log.Println(resp)
-	defer resp.Body.Close()
+	log.Println(resp.StatusCode())
 }
-	var pollCount int64
-    var randomValue = 0.0
 
 func main() {
 	metrics := map[string]float64{}

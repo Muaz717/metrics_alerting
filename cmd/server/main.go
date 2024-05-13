@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
-	"strings"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // Тип хранилища для метрик
@@ -25,73 +29,97 @@ var storage = &MemStorage{
 }
 
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/update/", handleMetric)
-	mux.HandleFunc("/", handleAnother)
+	r := chi.NewRouter()
 
-	err := http.ListenAndServe(":8080", mux)
-	if err != nil{
-		panic(err)
+	r.Get("/", giveHTML)
+	r.Post("/update/counter/{name}/{value}", handleCounter)
+	r.Post("/update/gauge/{name}/{value}", handleGauge)
+	r.Post("/update/{metricType}/{name}/{value}", handleWrongType)
+	r.Get("/value/{metricType}/{name}", giveValue)
+
+
+	log.Fatal(http.ListenAndServe(":8080", r))
+}
+
+func giveHTML(w http.ResponseWriter, r *http.Request){
+	for name, value := range storage.Counters{
+		fmt.Fprintf(w, "%s: %d\n", name, value)
+	}
+
+	for name, value := range storage.Gauges{
+		fmt.Fprintf(w, "%s: %f\n", name, value)
 	}
 }
 
-// Обработчик POST-запросов для приёма метрик
-func handleMetric(w http.ResponseWriter, r *http.Request) {
-	path := strings.Split(r.URL.Path, "/")
+func handleWrongType(w http.ResponseWriter, r *http.Request) {
+	metricType := chi.URLParam(r, "metricType")
 
-	if len(path) != 4 && len(path) != 5 {
+	if metricType != "gauge" && metricType != "counter"{
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+}
+
+func handleCounter(w http.ResponseWriter, r *http.Request){
+	name := chi.URLParam(r, "name")
+	value := chi.URLParam(r, "value")
+
+	valueInt, err := strconv.ParseInt(value, 10, 64)
+	if err != nil{
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	metricType := path[2]
+	storage.UpdateCounter(name, valueInt)
 
-	// Проверка типа метрики
-	switch metricType{
-	case "gauge":
-		if len(path) == 4 {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		value, err := strconv.ParseFloat(path[4], 64)
-		if err != nil{
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		// Обновление метрики типа "gauge"
-		storage.UpdateGauge(path[3], value)
-
-	case "counter":
-		if len(path) == 4 {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		value, err := strconv.ParseInt(path[4], 10, 64)
-		if err != nil{
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		// Обновление метрики типа "counter"
-		storage.UpdateCounter(path[3], value)
-
-	default:
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	// Отправка ответа 200 OK
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-
 }
 
-// Обработчик всех остальных запросов
-func handleAnother(w http.ResponseWriter, r *http.Request) {
-	http.NotFound(w,r)
+func handleGauge(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	value := chi.URLParam(r, "value")
+
+	valueFloat, err := strconv.ParseFloat(value, 64)
+	if err != nil{
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	storage.UpdateGauge(name, valueFloat)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
+
+func giveValue(w http.ResponseWriter, r *http.Request) {
+	metricType := chi.URLParam(r, "metricType")
+	name := chi.URLParam(r, "name")
+
+	switch metricType{
+	case "counter":
+		if _, ok := storage.Counters[name]; !ok{
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		io.WriteString(w, strconv.FormatInt(storage.Counters[name], 10))
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		return
+
+	case "gauge":
+		if _, ok := storage.Gauges[name]; !ok{
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		io.WriteString(w, strconv.FormatFloat(storage.Gauges[name], 'f', -1, 64))
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		return
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 }
 
 func (s *MemStorage) UpdateGauge(name string, value float64){

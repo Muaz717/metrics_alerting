@@ -18,7 +18,7 @@ type Config struct{
 	PollInterval	int		`env:"POLL_INTERVAL"`
 }
 
-func parseFlagsAgent() {
+func parseFlagsAgent()error {
 	flag.StringVar(&flags.flagRunAddr, "a", "localhost:8080", "port to send requests")
 	flag.IntVar(&flags.flagReportInterval, "r", 10, "set rerpot interval")
 	flag.IntVar(&flags.flagPollInterval, "p", 2, "set poll interval")
@@ -28,18 +28,19 @@ func parseFlagsAgent() {
 	var cfg Config
 	err := env.Parse(&cfg)
 	if err != nil{
-		panic(err)
+		return err
 	}
 
 	if cfg.Address != ""{
 		flags.flagRunAddr = cfg.Address
 	}
 
-	if cfg.ReportInterval >= 0{
+	if cfg.ReportInterval > 0{
 		flags.flagReportInterval = cfg.ReportInterval
 	}
 
-	if cfg.PollInterval >= 0{
+	if cfg.PollInterval > 0{
 		flags.flagPollInterval = cfg.PollInterval
 	}
+	return nil
 }

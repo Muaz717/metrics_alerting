@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	// "net/http"
 	"runtime"
+	"sync"
 	"time"
 
-	`github.com/go-resty/resty/v2`
+	"github.com/go-resty/resty/v2"
 )
 
 const (
@@ -19,12 +21,15 @@ const (
 var pollCount int64
 var randomValue = 0.0
 
+var mx = &sync.Mutex{}
+
 func updateMetrics(metrics *map[string]float64) {
 	metric := new(runtime.MemStats)
 	runtime.ReadMemStats(metric)
 
 
 	for {
+		mx.Lock()
 		pollCount++
 		randomValue = rand.Float64()
 
@@ -58,12 +63,16 @@ func updateMetrics(metrics *map[string]float64) {
 			"TotalAlloc": 	float64(metric.TotalAlloc),
             "RandomValue":  randomValue,
         }
+		mx.Unlock()
 
 		time.Sleep(time.Duration(flags.flagPollInterval) * time.Second)
+		log.Println("Metrics updated")
 	}
 }
 
 func sendMetric(metrics map[string]float64, pollCount int64) {
+	mx.Lock()
+	defer mx.Unlock()
 	client := resty.New()
 
 	for metricName, value := range metrics{
@@ -96,8 +105,14 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 }
 
 func main() {
+
 	metrics := map[string]float64{}
-	parseFlagsAgent()
+
+	err := parseFlagsAgent()
+	if err != nil{
+		log.Fatal(err)
+	}
+
 
 	go updateMetrics(&metrics)
 

@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"sync"
 
+	"github.com/Muaz717/metrics_alerting/internal/logger"
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 )
 
 // Тип хранилища для метрик
@@ -33,27 +34,35 @@ var storage = &MemStorage{
 }
 
 func main() {
+	if err := logger.Initialize(flagLogLevel); err != nil{
+		log.Fatal(err)
+	}
+
 	r := chi.NewRouter()
 
-	r.Get("/", giveHTML)
-	r.Post("/update/counter/{name}/{value}", handleCounter)
-	r.Post("/update/gauge/{name}/{value}", handleGauge)
-	r.Post("/update/{metricType}/{name}/{value}", handleWrongType)
-	r.Get("/value/{metricType}/{name}", giveValue)
+	r.Get("/", logger.WithLogging(giveHTML))
+	r.Post("/update/counter/{name}/{value}", logger.WithLogging(handleCounter))
+	r.Post("/update/gauge/{name}/{value}", logger.WithLogging(handleGauge))
+	r.Post("/update/{metricType}/{name}/{value}", logger.WithLogging(handleWrongType))
+	r.Get("/value/{metricType}/{name}", logger.WithLogging(giveValue))
 
 	parseFlagsServer()
 
+	logger.Log.Info("Server is running on addr", zap.String("addr", flagRunAddr))
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))
 }
 
 func giveHTML(w http.ResponseWriter, r *http.Request){
 	for name, value := range storage.Counters{
-		fmt.Fprintf(w, "%s: %d\n", name, value)
+		wr := fmt.Sprintf("%s: %d\n", name, value)
+		w.Write([]byte(wr))
 	}
 
 	for name, value := range storage.Gauges{
-		fmt.Fprintf(w, "%s: %f\n", name, value)
+		wr1 := fmt.Sprintf("%s: %f\n", name, value)
+		w.Write([]byte(wr1))
 	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func handleWrongType(w http.ResponseWriter, r *http.Request) {
@@ -134,9 +143,9 @@ func (s *MemStorage) GetGauge(name string, w http.ResponseWriter){
 		w.WriteHeader(http.StatusNotFound)
 	}
 
-	io.WriteString(w, strconv.FormatFloat(storage.Gauges[name], 'f', -1, 64))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(strconv.FormatFloat(storage.Gauges[name], 'f', -1, 64)))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-
 }
 
 func (s *MemStorage) GetCounter(name string, w http.ResponseWriter){
@@ -147,7 +156,8 @@ func (s *MemStorage) GetCounter(name string, w http.ResponseWriter){
 		return
 	}
 
-	io.WriteString(w, strconv.FormatInt(storage.Counters[name], 10))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(strconv.FormatInt(storage.Counters[name], 10)))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
 }

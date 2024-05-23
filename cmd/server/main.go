@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/Muaz717/metrics_alerting/internal/logger"
+	"github.com/Muaz717/metrics_alerting/internal/models"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
@@ -32,6 +34,9 @@ var storage = &MemStorage{
 	Gauges: make(map[string]float64),
 	Counters: make(map[string]int64),
 }
+// Мапа для хранения имеющегося в структуре counter
+var countersMap = map[string]int64{}
+var gaugesMap = map[string]float64{}
 
 func main() {
 	if err := logger.Initialize(flagLogLevel); err != nil{
@@ -41,6 +46,8 @@ func main() {
 	r := chi.NewRouter()
 
 	r.Get("/", logger.WithLogging(giveHTML))
+	r.Post("/update/", logger.WithLogging(handleSendJSON))
+	r.Post("/value/", logger.WithLogging(handleGetJson))
 	r.Post("/update/counter/{name}/{value}", logger.WithLogging(handleCounter))
 	r.Post("/update/gauge/{name}/{value}", logger.WithLogging(handleGauge))
 	r.Post("/update/{metricType}/{name}/{value}", logger.WithLogging(handleWrongType))
@@ -50,6 +57,129 @@ func main() {
 
 	logger.Log.Info("Server is running on addr", zap.String("addr", flagRunAddr))
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))
+}
+
+func handleGetJson(w http.ResponseWriter, r *http.Request){
+	var metrics models.Metrics
+
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&metrics); err != nil{
+		logger.Log.Info("decoding request JSON body error", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+
+	response := models.Metrics{
+		ID: metrics.ID,
+		MType: metrics.MType,
+	}
+	switch response.MType{
+	case "counter":
+		if _, ok := countersMap[response.ID]; !ok{
+			logger.Log.Info("No counter metric with this id")
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		val := countersMap[response.ID]
+		response.Delta = &val
+
+		w.Header().Set("Content-type", "application/json")
+
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(response); err != nil{
+			logger.Log.Info("encoding response JSON body error", zap.Error(err))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+
+	case "gauge":
+		if _, ok := gaugesMap[response.ID]; !ok{
+			logger.Log.Info("No gauge metric with this id")
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		value := gaugesMap[response.ID]
+		response.Value = &value
+
+		w.Header().Set("Content-type", "application/json")
+
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(response); err != nil{
+			logger.Log.Info("encoding response JSON body error", zap.Error(err))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+
+
+}
+
+func handleSendJSON(w http.ResponseWriter, r *http.Request) {
+	var metrics models.Metrics
+
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&metrics); err != nil{
+		logger.Log.Info("decoding request JSON body error", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	switch metrics.MType{
+	case "gauge":
+		response := models.Metrics{
+			ID: metrics.ID,
+			MType: metrics.MType,
+			Value: metrics.Value,
+		}
+
+		if response.ID == ""{
+			logger.Log.Info("Forgot metric name")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		gaugesMap[response.ID] = *metrics.Value
+
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(response); err != nil{
+			logger.Log.Info("encoding response JSON body error", zap.Error(err))
+			return
+		}
+
+	case "counter":
+		response := models.Metrics{
+			ID: metrics.ID,
+			MType: metrics.MType,
+			Delta: metrics.Delta,
+		}
+
+		if response.ID == ""{
+			logger.Log.Info("Forgot metric name")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if value, ok := countersMap[response.ID]; ok{
+			newValue := *response.Delta + value
+			response.Delta = &newValue
+		}
+		countersMap[response.ID] = *response.Delta
+
+		enc := json.NewEncoder(w)
+		if err := enc.Encode(response); err != nil{
+			logger.Log.Info("encoding response JSON body error", zap.Error(err))
+			return
+		}
+	default:
+		logger.Log.Info("Wrong metric type")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
 }
 
 func giveHTML(w http.ResponseWriter, r *http.Request){
@@ -102,6 +232,7 @@ func handleGauge(w http.ResponseWriter, r *http.Request) {
 
 	storage.UpdateGauge(name, valueFloat)
 
+
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
@@ -128,12 +259,14 @@ func (s *MemStorage) UpdateGauge(name string, value float64){
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	s.Gauges[name] = value
+	gaugesMap[name] = value
 }
 
 func (s *MemStorage) UpdateCounter(name string, value int64){
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	s.Counters[name] += value
+	countersMap[name] = s.Counters[name]
 }
 
 func (s *MemStorage) GetGauge(name string, w http.ResponseWriter){
@@ -144,7 +277,7 @@ func (s *MemStorage) GetGauge(name string, w http.ResponseWriter){
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(strconv.FormatFloat(storage.Gauges[name], 'f', -1, 64)))
+	w.Write([]byte(strconv.FormatFloat(s.Gauges[name], 'f', -1, 64)))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 }
 
@@ -157,7 +290,7 @@ func (s *MemStorage) GetCounter(name string, w http.ResponseWriter){
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(strconv.FormatInt(storage.Counters[name], 10)))
+	w.Write([]byte(strconv.FormatInt(s.Counters[name], 10)))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
 }

@@ -50,6 +50,7 @@ func updateMetrics(metrics *map[string]float64) {
 			"MCacheInuse": 	float64(metric.MCacheInuse),
 			"MCacheSys": 	float64(metric.MCacheSys),
 			"MSpanInuse": 	float64(metric.MSpanInuse),
+			"MSpanSys":		float64(metric.MSpanSys),
 			"Mallocs": 		float64(metric.Mallocs),
 			"NextGC": 		float64(metric.NextGC),
 			"NumForcedGC": 	float64(metric.NumForcedGC),
@@ -65,7 +66,7 @@ func updateMetrics(metrics *map[string]float64) {
 		mx.Unlock()
 
 		time.Sleep(time.Duration(flags.flagPollInterval) * time.Second)
-		log.Println("Metrics updated")
+		// log.Println("Metrics updated")
 	}
 }
 
@@ -77,7 +78,7 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 	for metricName, value := range metrics{
 		url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress+flags.flagRunAddr, metricName, value)
 
-		resp, err := client.R().
+		_, err := client.R().
 			SetHeader("Content-Type", "text/plain").
 			Post(url)
 
@@ -86,12 +87,11 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 			return
 		}
 
-		log.Println(resp.StatusCode())
 	}
 
 	url1 := fmt.Sprintf("%s/update/counter/PollCount/%d", serverAddress+flags.flagRunAddr, pollCount)
 
-	resp, err := client.R().
+	_, err := client.R().
 		SetHeader("Content-Type", "text/plain").
 		Post(url1)
 
@@ -99,8 +99,6 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 		log.Println("Error sending metric:", err)
 		return
 	}
-
-	log.Println(resp.StatusCode())
 }
 
 func main() {

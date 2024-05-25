@@ -22,7 +22,7 @@ type Config struct{
 
 func parseFlagsAgent()error {
 	flag.StringVar(&flags.flagRunAddr, "a", "localhost:8080", "port to send requests")
-	flag.IntVar(&flags.flagReportInterval, "r", 10, "set rerpot interval")
+	flag.IntVar(&flags.flagReportInterval, "r", 10, "set report interval")
 	flag.IntVar(&flags.flagPollInterval, "p", 2, "set poll interval")
 	flag.StringVar(&flags.flagLogLevel, "l", "info", "log level")
 

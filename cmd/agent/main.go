@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"runtime"
 	"sync"
 	"time"
 
+	storage "github.com/Muaz717/metrics_alerting/internal/storag"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -22,7 +26,7 @@ var randomValue = 0.0
 
 var mx = &sync.Mutex{}
 
-func updateMetrics(metrics *map[string]float64) {
+func updateMetrics(metrics *map[string]interface{}) {
 	metric := new(runtime.MemStats)
 	runtime.ReadMemStats(metric)
 
@@ -33,10 +37,9 @@ func updateMetrics(metrics *map[string]float64) {
 		randomValue = rand.Float64()
 
 		// Сбор метрик из пакета runtime
-		*metrics = map[string]float64{
+		*metrics = map[string]interface{}{
             "Alloc":        float64(metric.Alloc),
             "BuckHashSys":  float64(metric.BuckHashSys),
-			"Frees": 		float64(metric.Frees),
 			"GCCPUFraction":float64(metric.GCCPUFraction),
 			"GCSys": 		float64(metric.GCSys),
 			"HeapAlloc": 	float64(metric.HeapAlloc),
@@ -51,9 +54,9 @@ func updateMetrics(metrics *map[string]float64) {
 			"MCacheSys": 	float64(metric.MCacheSys),
 			"MSpanInuse": 	float64(metric.MSpanInuse),
 			"MSpanSys":		float64(metric.MSpanSys),
-			"Mallocs": 		float64(metric.Mallocs),
 			"NextGC": 		float64(metric.NextGC),
 			"NumForcedGC": 	float64(metric.NumForcedGC),
+			"Mallocs": 		float64(metric.Mallocs),
 			"NumGC": 		float64(metric.NumGC),
 			"OtherSys": 	float64(metric.OtherSys),
 			"PauseTotalNs": float64(metric.PauseTotalNs),
@@ -62,6 +65,8 @@ func updateMetrics(metrics *map[string]float64) {
 			"Sys": 			float64(metric.Sys),
 			"TotalAlloc": 	float64(metric.TotalAlloc),
             "RandomValue":  randomValue,
+			"PollCount":	pollCount,
+			"Frees": 		float64(metric.Frees),
         }
 		mx.Unlock()
 
@@ -70,13 +75,17 @@ func updateMetrics(metrics *map[string]float64) {
 	}
 }
 
-func sendMetric(metrics map[string]float64, pollCount int64) {
+func sendMetric(metrics map[string]interface{}) {
 	mx.Lock()
 	defer mx.Unlock()
-	client := resty.New()
+	var client = resty.New()
+	client.SetTimeout(1 * time.Second)
 
 	for metricName, value := range metrics{
-		url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress+flags.flagRunAddr, metricName, value)
+
+		switch value.(type){
+		case float64:
+			url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress+flags.flagRunAddr, metricName, value)
 
 		_, err := client.R().
 			SetHeader("Content-Type", "text/plain").
@@ -87,23 +96,78 @@ func sendMetric(metrics map[string]float64, pollCount int64) {
 			return
 		}
 
+		// log.Printf("Metric %v has been sent", metricName)
+
+	case int64:
+		url := fmt.Sprintf("%s/update/counter/%s/%d", serverAddress+flags.flagRunAddr, metricName, value)
+
+		_, err := client.R().
+			SetHeader("Content-Type", "text/plain").
+			Post(url)
+
+		if err != nil{
+			log.Println("Error sending metric:", err)
+			return
+		}
+	}
+		}
+
+}
+
+func sendMetricJSON(metrics map[string]interface{}){
+	mx.Lock()
+	defer mx.Unlock()
+
+	var metricsJSON storage.Metrics
+	url := fmt.Sprintf("%s/update/", serverAddress+flags.flagRunAddr)
+
+	client := resty.New()
+
+	for metricName, value := range metrics{
+
+		switch val := value.(type){
+		case float64:
+			metricsJSON = storage.Metrics{
+				ID: metricName,
+				MType: "gauge",
+				Value: &val,
+			}
+
+		case int64:
+			metricsJSON = storage.Metrics{
+				ID: metricName,
+				MType: "counter",
+				Delta: &val,
+			}
+
+		}
+
+		var buffer bytes.Buffer
+		err := json.NewEncoder(&buffer).Encode(metricsJSON)
+		if err != nil {
+			log.Printf("failed to JSON encode gauge metric: %v", err)
+			return
+		}
+
+		req := client.R()
+		req.Method = http.MethodPost
+		req.Body = metricsJSON
+		req.SetHeader("Content-Type", "application/json")
+		req.URL = url
+
+		_, err = req.Send()
+		if err  != nil{
+			log.Println("Error sending metric:", err)
+			return
+		}
+
 	}
 
-	url1 := fmt.Sprintf("%s/update/counter/PollCount/%d", serverAddress+flags.flagRunAddr, pollCount)
-
-	_, err := client.R().
-		SetHeader("Content-Type", "text/plain").
-		Post(url1)
-
-	if err != nil{
-		log.Println("Error sending metric:", err)
-		return
-	}
 }
 
 func main() {
 
-	metrics := map[string]float64{}
+	metrics := map[string]interface{}{}
 
 	err := parseFlagsAgent()
 	if err != nil{
@@ -114,9 +178,9 @@ func main() {
 	go updateMetrics(&metrics)
 
 	for{
-		go sendMetric(metrics, pollCount)
+		go sendMetric(metrics)
+		go sendMetricJSON(metrics)
 		time.Sleep(time.Duration(flags.flagReportInterval) * time.Second)
 	}
-
 
 }

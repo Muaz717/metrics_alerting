@@ -9,34 +9,18 @@ import (
 	"sync"
 
 	"github.com/Muaz717/metrics_alerting/internal/logger"
-	"github.com/Muaz717/metrics_alerting/internal/models"
+	"github.com/Muaz717/metrics_alerting/internal/storag"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
-// Тип хранилища для метрик
-type MemStorage struct {
-	mx sync.Mutex
-	Gauges map[string]float64
-	Counters map[string]int64
-}
-
-// Интерфейс для взаимодействия с хранилищем
-type Storage interface {
-	GetGauge(string, http.ResponseWriter)
-	GetCounter(string, http.ResponseWriter)
-	UpdateGauge(string, float64)
-	UpdateCounter(string, int64)
-}
-
 // Инициализация хранилища
-var storage = &MemStorage{
+var metricsStorage = &storage.MemStorage{
 	Gauges: make(map[string]float64),
 	Counters: make(map[string]int64),
 }
-// Мапа для хранения имеющегося в структуре counter
-var countersMap = map[string]int64{}
-var gaugesMap = map[string]float64{}
+
+var mx = &sync.Mutex{}
 
 func main() {
 	if err := logger.Initialize(flagLogLevel); err != nil{
@@ -47,7 +31,7 @@ func main() {
 
 	r.Get("/", logger.WithLogging(giveHTML))
 	r.Post("/update/", logger.WithLogging(handleSendJSON))
-	r.Post("/value/", logger.WithLogging(handleGetJson))
+	r.Post("/value/", logger.WithLogging(handleGetJSON))
 	r.Post("/update/counter/{name}/{value}", logger.WithLogging(handleCounter))
 	r.Post("/update/gauge/{name}/{value}", logger.WithLogging(handleGauge))
 	r.Post("/update/{metricType}/{name}/{value}", logger.WithLogging(handleWrongType))
@@ -59,8 +43,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))
 }
 
-func handleGetJson(w http.ResponseWriter, r *http.Request){
-	var metrics models.Metrics
+func handleGetJSON(w http.ResponseWriter, r *http.Request){
+	var metrics storage.Metrics
 
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&metrics); err != nil{
@@ -70,18 +54,19 @@ func handleGetJson(w http.ResponseWriter, r *http.Request){
 	}
 
 
-	response := models.Metrics{
+	response := storage.Metrics{
 		ID: metrics.ID,
 		MType: metrics.MType,
 	}
 	switch response.MType{
 	case "counter":
-		if _, ok := countersMap[response.ID]; !ok{
+		mx.Lock()
+		if _, ok := metricsStorage.Counters[response.ID]; !ok{
 			logger.Log.Info("No counter metric with this id")
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		val := countersMap[response.ID]
+		val := metricsStorage.Counters[response.ID]
 		response.Delta = &val
 
 		w.Header().Set("Content-type", "application/json")
@@ -92,14 +77,15 @@ func handleGetJson(w http.ResponseWriter, r *http.Request){
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-
+		mx.Unlock()
 	case "gauge":
-		if _, ok := gaugesMap[response.ID]; !ok{
+		mx.Lock()
+		if _, ok := metricsStorage.Gauges[response.ID]; !ok{
 			logger.Log.Info("No gauge metric with this id")
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		value := gaugesMap[response.ID]
+		value := metricsStorage.Gauges[response.ID]
 		response.Value = &value
 
 		w.Header().Set("Content-type", "application/json")
@@ -110,13 +96,13 @@ func handleGetJson(w http.ResponseWriter, r *http.Request){
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+		mx.Unlock()
 	}
-
 
 }
 
 func handleSendJSON(w http.ResponseWriter, r *http.Request) {
-	var metrics models.Metrics
+	var metrics storage.Metrics
 
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&metrics); err != nil{
@@ -127,7 +113,8 @@ func handleSendJSON(w http.ResponseWriter, r *http.Request) {
 
 	switch metrics.MType{
 	case "gauge":
-		response := models.Metrics{
+		mx.Lock()
+		response := storage.Metrics{
 			ID: metrics.ID,
 			MType: metrics.MType,
 			Value: metrics.Value,
@@ -139,16 +126,17 @@ func handleSendJSON(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		gaugesMap[response.ID] = *metrics.Value
+		metricsStorage.Gauges[response.ID] = *metrics.Value
 
 		enc := json.NewEncoder(w)
 		if err := enc.Encode(response); err != nil{
 			logger.Log.Info("encoding response JSON body error", zap.Error(err))
 			return
 		}
-
+		mx.Unlock()
 	case "counter":
-		response := models.Metrics{
+		mx.Lock()
+		response := storage.Metrics{
 			ID: metrics.ID,
 			MType: metrics.MType,
 			Delta: metrics.Delta,
@@ -160,17 +148,18 @@ func handleSendJSON(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if value, ok := countersMap[response.ID]; ok{
+		if value, ok := metricsStorage.Counters[response.ID]; ok{
 			newValue := *response.Delta + value
 			response.Delta = &newValue
 		}
-		countersMap[response.ID] = *response.Delta
+		metricsStorage.Counters[response.ID] = *response.Delta
 
 		enc := json.NewEncoder(w)
 		if err := enc.Encode(response); err != nil{
 			logger.Log.Info("encoding response JSON body error", zap.Error(err))
 			return
 		}
+		mx.Unlock()
 	default:
 		logger.Log.Info("Wrong metric type")
 		w.WriteHeader(http.StatusBadRequest)
@@ -183,12 +172,12 @@ func handleSendJSON(w http.ResponseWriter, r *http.Request) {
 }
 
 func giveHTML(w http.ResponseWriter, r *http.Request){
-	for name, value := range storage.Counters{
+	for name, value := range metricsStorage.Counters{
 		wr := fmt.Sprintf("%s: %d\n", name, value)
 		w.Write([]byte(wr))
 	}
 
-	for name, value := range storage.Gauges{
+	for name, value := range metricsStorage.Gauges{
 		wr1 := fmt.Sprintf("%s: %f\n", name, value)
 		w.Write([]byte(wr1))
 	}
@@ -214,7 +203,7 @@ func handleCounter(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	storage.UpdateCounter(name, valueInt)
+	metricsStorage.UpdateCounter(name, valueInt)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -230,7 +219,7 @@ func handleGauge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storage.UpdateGauge(name, valueFloat)
+	metricsStorage.UpdateGauge(name, valueFloat)
 
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -244,53 +233,13 @@ func giveValue(w http.ResponseWriter, r *http.Request) {
 
 	switch metricType{
 	case "counter":
-		storage.GetCounter(name, w)
+		metricsStorage.GetCounter(name, w)
 		return
 	case "gauge":
-		storage.GetGauge(name, w)
+		metricsStorage.GetGauge(name, w)
 		return
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-}
-
-func (s *MemStorage) UpdateGauge(name string, value float64){
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	s.Gauges[name] = value
-	gaugesMap[name] = value
-}
-
-func (s *MemStorage) UpdateCounter(name string, value int64){
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	s.Counters[name] += value
-	countersMap[name] = s.Counters[name]
-}
-
-func (s *MemStorage) GetGauge(name string, w http.ResponseWriter){
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	if _, ok := s.Gauges[name]; !ok{
-		w.WriteHeader(http.StatusNotFound)
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(strconv.FormatFloat(s.Gauges[name], 'f', -1, 64)))
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-}
-
-func (s *MemStorage) GetCounter(name string, w http.ResponseWriter){
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	if _, ok := s.Counters[name]; !ok{
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(strconv.FormatInt(s.Counters[name], 10)))
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-
 }

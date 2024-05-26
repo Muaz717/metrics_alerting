@@ -71,7 +71,10 @@ func updateMetrics(metrics *map[string]interface{}) {
 		mx.Unlock()
 
 		time.Sleep(time.Duration(flags.flagPollInterval) * time.Second)
-		// log.Println("Metrics updated")
+		// log.Println(metric.Frees)
+		// log.Println(metric.Alloc)
+		// log.Println(metric.Mallocs)
+		// log.Println(metric.Sys)
 	}
 }
 
@@ -115,8 +118,6 @@ func sendMetric(metrics map[string]interface{}) {
 }
 
 func sendMetricJSON(metrics map[string]interface{}){
-	mx.Lock()
-	defer mx.Unlock()
 
 	var metricsJSON storage.Metrics
 	url := fmt.Sprintf("%s/update/", serverAddress+flags.flagRunAddr)
@@ -157,7 +158,7 @@ func sendMetricJSON(metrics map[string]interface{}){
 
 		_, err = req.Send()
 		if err  != nil{
-			log.Println("Error sending metric:", err)
+			log.Println("Error sending JSON metric:", err)
 			return
 		}
 

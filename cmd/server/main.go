@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 
 	"github.com/Muaz717/metrics_alerting/internal/logger"
 	"github.com/Muaz717/metrics_alerting/internal/storag"
@@ -20,7 +19,7 @@ var metricsStorage = &storage.MemStorage{
 	Counters: make(map[string]int64),
 }
 
-var mx = &sync.Mutex{}
+
 
 func main() {
 	if err := logger.Initialize(flagLogLevel); err != nil{
@@ -30,8 +29,8 @@ func main() {
 	r := chi.NewRouter()
 
 	r.Get("/", logger.WithLogging(giveHTML))
-	r.Post("/update/", logger.WithLogging(handleSendJSON))
-	r.Post("/value/", logger.WithLogging(handleGetJSON))
+	r.Post("/update/", logger.WithLogging(handleUpdateJSON))
+	r.Post("/value/", logger.WithLogging(handleValueJSON))
 	r.Post("/update/counter/{name}/{value}", logger.WithLogging(handleCounter))
 	r.Post("/update/gauge/{name}/{value}", logger.WithLogging(handleGauge))
 	r.Post("/update/{metricType}/{name}/{value}", logger.WithLogging(handleWrongType))
@@ -43,7 +42,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))
 }
 
-func handleGetJSON(w http.ResponseWriter, r *http.Request){
+func handleValueJSON(w http.ResponseWriter, r *http.Request){
 	var metrics storage.Metrics
 
 	dec := json.NewDecoder(r.Body)
@@ -52,122 +51,48 @@ func handleGetJSON(w http.ResponseWriter, r *http.Request){
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
 
 	response := storage.Metrics{
 		ID: metrics.ID,
 		MType: metrics.MType,
 	}
+
 	switch response.MType{
-	case "counter":
-		mx.Lock()
-		if _, ok := metricsStorage.Counters[response.ID]; !ok{
-			logger.Log.Info("No counter metric with this id")
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		val := metricsStorage.Counters[response.ID]
-		response.Delta = &val
-
-		w.Header().Set("Content-type", "application/json")
-
-		enc := json.NewEncoder(w)
-		if err := enc.Encode(response); err != nil{
-			logger.Log.Info("encoding response JSON body error", zap.Error(err))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		mx.Unlock()
 	case "gauge":
-		mx.Lock()
-		if _, ok := metricsStorage.Gauges[response.ID]; !ok{
-			logger.Log.Info("No gauge metric with this id")
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		value := metricsStorage.Gauges[response.ID]
-		response.Value = &value
-
-		w.Header().Set("Content-type", "application/json")
-
-		enc := json.NewEncoder(w)
-		if err := enc.Encode(response); err != nil{
-			logger.Log.Info("encoding response JSON body error", zap.Error(err))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		mx.Unlock()
-	}
-
-}
-
-func handleSendJSON(w http.ResponseWriter, r *http.Request) {
-	var metrics storage.Metrics
-
-	dec := json.NewDecoder(r.Body)
-	if err := dec.Decode(&metrics); err != nil{
-		logger.Log.Info("decoding request JSON body error", zap.Error(err))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	switch metrics.MType{
-	case "gauge":
-		mx.Lock()
-		response := storage.Metrics{
-			ID: metrics.ID,
-			MType: metrics.MType,
-			Value: metrics.Value,
-		}
-
-		if response.ID == ""{
-			logger.Log.Info("Forgot metric name")
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		metricsStorage.Gauges[response.ID] = *metrics.Value
-
-		enc := json.NewEncoder(w)
-		if err := enc.Encode(response); err != nil{
-			logger.Log.Info("encoding response JSON body error", zap.Error(err))
-			return
-		}
-		mx.Unlock()
+		metricsStorage.ValueGaugeJSON(metrics, w)
 	case "counter":
-		mx.Lock()
-		response := storage.Metrics{
-			ID: metrics.ID,
-			MType: metrics.MType,
-			Delta: metrics.Delta,
-		}
-
-		if response.ID == ""{
-			logger.Log.Info("Forgot metric name")
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		if value, ok := metricsStorage.Counters[response.ID]; ok{
-			newValue := *response.Delta + value
-			response.Delta = &newValue
-		}
-		metricsStorage.Counters[response.ID] = *response.Delta
-
-		enc := json.NewEncoder(w)
-		if err := enc.Encode(response); err != nil{
-			logger.Log.Info("encoding response JSON body error", zap.Error(err))
-			return
-		}
-		mx.Unlock()
+		metricsStorage.ValueCounterJSON(metrics, w)
 	default:
 		logger.Log.Info("Wrong metric type")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	w.Header().Set("Content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
+}
+func handleUpdateJSON(w http.ResponseWriter, r *http.Request) {
+	var metrics storage.Metrics
+
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&metrics); err != nil{
+		logger.Log.Info("decoding request JSON body error", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// response := storage.Metrics{
+
+	// }
+	switch metrics.MType{
+	case "gauge":
+		metricsStorage.UpdateGaugeJSON(metrics, w)
+	case "counter":
+		metricsStorage.UpdateCounterJSON(metrics, w)
+	default:
+		logger.Log.Info("Wrong metric type")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 
 }
 

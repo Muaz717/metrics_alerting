@@ -53,12 +53,9 @@ func handleValueJSON(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	response := storage.Metrics{
-		ID: metrics.ID,
-		MType: metrics.MType,
-	}
 
-	switch response.MType{
+
+	switch metrics.MType{
 	case "gauge":
 		metricsStorage.ValueGaugeJSON(metrics, w)
 	case "counter":
@@ -98,7 +95,7 @@ func handleUpdateJSON(w http.ResponseWriter, r *http.Request) {
 func giveHTML(w http.ResponseWriter, r *http.Request){
 	mx.Lock()
 	defer mx.Unlock()
-	
+
 	w.WriteHeader(http.StatusOK)
 
 	for name, value := range metricsStorage.Counters{

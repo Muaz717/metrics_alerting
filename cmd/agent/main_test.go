@@ -13,7 +13,7 @@ import (
 
 func TestSendMetric(t *testing.T) {
     mx := &sync.Mutex{}
-    metrics := map[string]float64{"RandomValue": 0.5, "PollCount": 1}
+    metrics := map[string]interface{}{"RandomValue": 0.5, "PollCount": 1}
 
     ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         body, err := io.ReadAll(r.Body)
@@ -28,7 +28,7 @@ func TestSendMetric(t *testing.T) {
     }))
     defer ts.Close()
 
-    go sendMetric(metrics, 1)
+    go sendMetric(metrics)
     time.Sleep(time.Second)
 
     mx.Lock()
@@ -39,7 +39,7 @@ func TestSendMetric(t *testing.T) {
 
 func TestUpdateMetrics(t *testing.T) {
     mx := &sync.Mutex{}
-    metrics := map[string]float64{}
+    metrics := map[string]interface{}{}
 
     go updateMetrics(&metrics)
     time.Sleep(time.Second)

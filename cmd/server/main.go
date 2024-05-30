@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/Muaz717/metrics_alerting/internal/logger"
 	"github.com/Muaz717/metrics_alerting/internal/storag"
@@ -14,12 +15,12 @@ import (
 )
 
 // Инициализация хранилища
-var metricsStorage = &storage.MemStorage{
+var metricsStorage = &MemStorage{
 	Gauges: make(map[string]float64),
 	Counters: make(map[string]int64),
 }
 
-
+var mx = &sync.Mutex{}
 
 func main() {
 	if err := logger.Initialize(flagLogLevel); err != nil{
@@ -79,9 +80,7 @@ func handleUpdateJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// response := storage.Metrics{
 
-	// }
 	switch metrics.MType{
 	case "gauge":
 		metricsStorage.UpdateGaugeJSON(metrics, w)
@@ -97,6 +96,11 @@ func handleUpdateJSON(w http.ResponseWriter, r *http.Request) {
 }
 
 func giveHTML(w http.ResponseWriter, r *http.Request){
+	mx.Lock()
+	defer mx.Unlock()
+	
+	w.WriteHeader(http.StatusOK)
+
 	for name, value := range metricsStorage.Counters{
 		wr := fmt.Sprintf("%s: %d\n", name, value)
 		w.Write([]byte(wr))
@@ -106,7 +110,7 @@ func giveHTML(w http.ResponseWriter, r *http.Request){
 		wr1 := fmt.Sprintf("%s: %f\n", name, value)
 		w.Write([]byte(wr1))
 	}
-	w.WriteHeader(http.StatusOK)
+
 }
 
 func handleWrongType(w http.ResponseWriter, r *http.Request) {

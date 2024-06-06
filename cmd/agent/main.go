@@ -138,6 +138,10 @@ func sendMetricJSON(metrics map[string]interface{}){
 			return
 		}
 		compressedData, err := CompressData(data)
+		if err != nil{
+			log.Println("Compress error")
+			return
+		}
 
 		client := resty.New()
 		_, err = client.R().

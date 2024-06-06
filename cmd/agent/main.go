@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
+	// "encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -132,21 +132,21 @@ func sendMetricJSON(metrics map[string]interface{}){
 		mx.Unlock()
 
 
-		data, err := json.Marshal(metricsJSON)
-		if err != nil{
-			log.Println("Error serializing JSON to data")
-			return
-		}
-		compressedData, err := CompressData(data)
-		if err != nil{
-			log.Println("Compress error")
-			return
-		}
+		// data, err := json.Marshal(metricsJSON)
+		// if err != nil{
+		// 	log.Println("Error serializing JSON to data")
+		// 	return
+		// }
+		// compressedData, err := CompressData(data)
+		// if err != nil{
+		// 	log.Println("Compress error")
+		// 	return
+		// }
 
 		client := resty.New()
-		_, err = client.R().
+		_, err := client.R().
 			SetHeader("Content-Type", "application/json").
-			SetBody(compressedData).
+			SetBody(metricsJSON).
 			Post(url)
 
 		if err  != nil{

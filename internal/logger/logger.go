@@ -2,7 +2,7 @@ package logger
 
 import (
 	"net/http"
-	// "time"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -47,9 +47,9 @@ func (l *loggingResponseWriter) WriteHeader(statusCode int){
 	l.responseData.status = statusCode
 }
 
-func WithLogging(next http.HandlerFunc) http.HandlerFunc{
-	return func(w http.ResponseWriter, r *http.Request) {
-		// start := time.Now()
+func WithLogging(next http.Handler) http.Handler{
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 
 
 		responseData := &responseData{
@@ -62,16 +62,16 @@ func WithLogging(next http.HandlerFunc) http.HandlerFunc{
 			responseData: responseData,
 		}
 
-		next(&lw, r)
+		next.ServeHTTP(&lw, r)
 
-		// duration := time.Since(start)
-		// Log.Info(
-		// 	"Got incoming HTTP request",
-		// 	zap.String("url", r.RequestURI),
-		// 	zap.String("method", r.Method),
-		// 	zap.Duration("duration", duration),
-		// 	zap.Int("size", responseData.size),
-		// 	zap.Int("status", responseData.status),
-		// )
-	}
+		duration := time.Since(start)
+		Log.Info(
+			"Got incoming HTTP request",
+			zap.String("url", r.RequestURI),
+			zap.String("method", r.Method),
+			zap.Duration("duration", duration),
+			zap.Int("size", responseData.size),
+			zap.Int("status", responseData.status),
+		)
+	})
 }

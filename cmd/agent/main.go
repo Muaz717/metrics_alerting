@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -130,17 +131,18 @@ func sendMetricJSON(metrics map[string]interface{}){
 		}
 		mx.Unlock()
 
-		var buffer bytes.Buffer
-		err := json.NewEncoder(&buffer).Encode(metricsJSON)
-		if err != nil {
-			log.Printf("failed to JSON encode gauge metric: %v", err)
+
+		data, err := json.Marshal(metricsJSON)
+		if err != nil{
+			log.Println("Error serializing JSON to data")
 			return
 		}
+		compressedData, err := CompressData(data)
 
 		client := resty.New()
 		_, err = client.R().
 			SetHeader("Content-Type", "application/json").
-			SetBody(metricsJSON).
+			SetBody(compressedData).
 			Post(url)
 
 		if err  != nil{
@@ -151,6 +153,24 @@ func sendMetricJSON(metrics map[string]interface{}){
 		log.Printf("Metric %v has been sent", metricName)
 	}
 
+}
+
+func CompressData(data []byte) ([]byte, error){
+	var buff bytes.Buffer
+
+	gz := gzip.NewWriter(&buff)
+
+	_, err := gz.Write(data)
+	if err != nil{
+		return nil, fmt.Errorf("failed write data to compress temporary buffer: %v", err)
+	}
+
+	err = gz.Close()
+	if err != nil {
+        return nil, fmt.Errorf("failed compress data: %v", err)
+    }
+
+	return buff.Bytes(), nil
 }
 
 func main() {

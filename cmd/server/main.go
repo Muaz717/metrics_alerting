@@ -29,13 +29,19 @@ func main() {
 
 	r := chi.NewRouter()
 
-	r.Get("/", logger.WithLogging(giveHTML))
-	r.Post("/update/", logger.WithLogging(handleUpdateJSON))
-	r.Post("/value/", logger.WithLogging(handleValueJSON))
-	r.Post("/update/counter/{name}/{value}", logger.WithLogging(handleCounter))
-	r.Post("/update/gauge/{name}/{value}", logger.WithLogging(handleGauge))
-	r.Post("/update/{metricType}/{name}/{value}", logger.WithLogging(handleWrongType))
-	r.Get("/value/{metricType}/{name}", logger.WithLogging(giveValue))
+	r.Route("/", func(r chi.Router) {
+		r.Use(logger.WithLogging)
+
+		r.Get("/", GzipMiddleware(giveHTML))
+		r.Post("/update/", GzipMiddleware(handleUpdateJSON))
+		r.Post("/value/", GzipMiddleware(handleValueJSON))
+
+		r.Post("/update/counter/{name}/{value}",handleCounter)
+		r.Post("/update/gauge/{name}/{value}", handleGauge)
+		r.Post("/update/{metricType}/{name}/{value}", handleWrongType)
+		r.Get("/value/{metricType}/{name}", giveValue)
+	})
+
 
 	parseFlagsServer()
 
@@ -52,8 +58,6 @@ func handleValueJSON(w http.ResponseWriter, r *http.Request){
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-
 
 	switch metrics.MType{
 	case "gauge":
@@ -77,7 +81,6 @@ func handleUpdateJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	switch metrics.MType{
 	case "gauge":
 		metricsStorage.UpdateGaugeJSON(metrics, w)
@@ -95,7 +98,7 @@ func handleUpdateJSON(w http.ResponseWriter, r *http.Request) {
 func giveHTML(w http.ResponseWriter, r *http.Request){
 	mx.Lock()
 	defer mx.Unlock()
-
+	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
 
 	for name, value := range metricsStorage.Counters{
@@ -146,7 +149,6 @@ func handleGauge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	metricsStorage.UpdateGauge(name, valueFloat)
-
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

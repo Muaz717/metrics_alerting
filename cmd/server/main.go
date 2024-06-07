@@ -23,10 +23,6 @@ var metricsStorage = &MemStorage{
 var mx = &sync.Mutex{}
 
 func main() {
-	if err := logger.Initialize(flagLogLevel); err != nil{
-		log.Fatal(err)
-	}
-
 	r := chi.NewRouter()
 
 	r.Route("/", func(r chi.Router) {
@@ -42,8 +38,22 @@ func main() {
 		r.Get("/value/{metricType}/{name}", giveValue)
 	})
 
+	if err := logger.Initialize(flagLogLevel); err != nil{
+		log.Fatal(err)
+	}
 
-	parseFlagsServer()
+	err := parseFlagsServer()
+	if err != nil{
+		log.Fatal(err)
+	}
+
+	fileName := flagFileStoragePath	
+
+	Producer, err := NewProducer(fileName)
+	if err != nil{
+		log.Fatal(err)
+	}
+	defer Producer.Close()
 
 	logger.Log.Info("Server is running on addr", zap.String("addr", flagRunAddr))
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))

@@ -1,19 +1,26 @@
 package main
 
 import (
-    "io"
-    "net/http"
-    "net/http/httptest"
-    "sync"
-    "testing"
-    "time"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
 
-    "github.com/stretchr/testify/assert"
+	"github.com/Muaz717/metrics_alerting/internal/config"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSendMetric(t *testing.T) {
     mx := &sync.Mutex{}
-    metrics := map[string]float64{"RandomValue": 0.5, "PollCount": 1}
+    metrics := map[string]interface{}{"RandomValue": 0.5, "PollCount": 1}
+
+    cfg, err := config.NewAgentConfiguration()
+	if err != nil{
+		log.Fatal(err)
+	}
 
     ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         body, err := io.ReadAll(r.Body)
@@ -28,7 +35,7 @@ func TestSendMetric(t *testing.T) {
     }))
     defer ts.Close()
 
-    go sendMetric(metrics, 1)
+    go sendMetric(metrics, cfg)
     time.Sleep(time.Second)
 
     mx.Lock()
@@ -39,7 +46,7 @@ func TestSendMetric(t *testing.T) {
 
 func TestUpdateMetrics(t *testing.T) {
     mx := &sync.Mutex{}
-    metrics := map[string]float64{}
+    metrics := map[string]interface{}{}
 
     go updateMetrics(&metrics)
     time.Sleep(time.Second)

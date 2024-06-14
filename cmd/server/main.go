@@ -129,7 +129,7 @@ func handleMetric(w http.ResponseWriter, r *http.Request){
 	mName := chi.URLParam(r, "name")
 	mValue := chi.URLParam(r, "value")
 
-	err := metricsStorage.SaveMetric(mType, mName, mValue)
+	err := store.SaveMetric(mType, mName, mValue)
 	if err != nil{
 		w.WriteHeader(http.StatusBadRequest)
 		return

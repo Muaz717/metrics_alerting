@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+
 	// "encoding/json"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Muaz717/metrics_alerting/internal/config"
 	storage "github.com/Muaz717/metrics_alerting/internal/storag"
 	"github.com/go-resty/resty/v2"
 )
@@ -70,7 +72,7 @@ func updateMetrics(metrics *map[string]interface{}) {
 	mx.Unlock()
 }
 
-func sendMetric(metrics map[string]interface{}) {
+func sendMetric(metrics map[string]interface{}, cfg config.AgentCfg) {
 	mx.Lock()
 	defer mx.Unlock()
 	time.Sleep(1 * time.Second)
@@ -80,7 +82,7 @@ func sendMetric(metrics map[string]interface{}) {
 
 		switch value.(type){
 		case float64:
-			url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress+flags.flagRunAddr, metricName, value)
+			url := fmt.Sprintf("%s/update/gauge/%s/%f", serverAddress+cfg.Host, metricName, value)
 
 		_, err := client.R().
 			SetHeader("Content-Type", "text/plain").
@@ -92,7 +94,7 @@ func sendMetric(metrics map[string]interface{}) {
 		}
 
 	case int64:
-		url := fmt.Sprintf("%s/update/counter/%s/%d", serverAddress+flags.flagRunAddr, metricName, value)
+		url := fmt.Sprintf("%s/update/counter/%s/%d", serverAddress+cfg.Host, metricName, value)
 
 		_, err := client.R().
 			SetHeader("Content-Type", "text/plain").
@@ -107,9 +109,9 @@ func sendMetric(metrics map[string]interface{}) {
 
 }
 
-func sendMetricJSON(metrics map[string]interface{}){
+func sendMetricJSON(metrics map[string]interface{},cfg config.AgentCfg){
 	var metricsJSON storage.Metrics
-	url := fmt.Sprintf("%s/update/", serverAddress+flags.flagRunAddr)
+	url := fmt.Sprintf("%s/update/", serverAddress+cfg.Host)
 
 	for metricName, value := range metrics{
 		mx.Lock()
@@ -180,20 +182,20 @@ func CompressData(data []byte) ([]byte, error){
 func main() {
 	metrics := map[string]interface{}{}
 
-	err := parseFlagsAgent()
+	cfg, err := config.NewAgentConfiguration()
 	if err != nil{
 		log.Fatal(err)
 	}
 
-	tickerUpdate := time.NewTicker(time.Duration(flags.flagPollInterval) * time.Second)
-	tickerSendJSON := time.NewTicker(time.Duration(flags.flagReportInterval) * time.Second)
+	tickerUpdate := time.NewTicker(time.Duration(cfg.PollInterval) * time.Second)
+	tickerSendJSON := time.NewTicker(time.Duration(cfg.ReportInterval) * time.Second)
 
 	for {
 		select{
 		case <-tickerUpdate.C:
 			updateMetrics(&metrics)
 		case <-tickerSendJSON.C:
-			sendMetricJSON(metrics)
+			sendMetricJSON(metrics, cfg)
 		}
 	}
 

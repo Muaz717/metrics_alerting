@@ -19,10 +19,10 @@ import (
 )
 
 // Инициализация хранилища
-var metricsStorage = &storage.MemStorage{
-	Gauges: make(map[string]float64),
-	Counters: make(map[string]int64),
-}
+// var metricsStorage = &storage.MemStorage{
+// 	Gauges: make(map[string]float64),
+// 	Counters: make(map[string]int64),
+// }
 
 var mx = &sync.Mutex{}
 var store storage.Storage
@@ -84,7 +84,7 @@ func handleValueJSON(w http.ResponseWriter, r *http.Request){
 
 	response, err := store.GetJSON(metrics)
 	if err != nil{
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 

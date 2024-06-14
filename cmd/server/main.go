@@ -19,10 +19,10 @@ import (
 )
 
 // Инициализация хранилища
-// var metricsStorage = &storage.MemStorage{
-// 	Gauges: make(map[string]float64),
-// 	Counters: make(map[string]int64),
-// }
+var metricsStorage = &storage.MemStorage{
+	Gauges: make(map[string]float64),
+	Counters: make(map[string]int64),
+}
 
 var mx = &sync.Mutex{}
 var store storage.Storage
@@ -82,7 +82,7 @@ func handleValueJSON(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	response, err := store.GetJson(metrics)
+	response, err := store.GetJSON(metrics)
 	if err != nil{
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -108,7 +108,7 @@ func handleUpdateJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := store.SaveJson(metrics)
+	response, err := store.SaveJSON(metrics)
 	if err != nil{
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -129,7 +129,7 @@ func handleMetric(w http.ResponseWriter, r *http.Request){
 	mName := chi.URLParam(r, "name")
 	mValue := chi.URLParam(r, "value")
 
-	err := store.SaveMetric(mType, mName, mValue)
+	err := metricsStorage.SaveMetric(mType, mName, mValue)
 	if err != nil{
 		w.WriteHeader(http.StatusBadRequest)
 		return

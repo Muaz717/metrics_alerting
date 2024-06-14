@@ -98,16 +98,16 @@ func (f *FileStorage) GetAllMetrics() string {
 	return f.MemStore.GetAllMetrics()
 }
 
-func (f *FileStorage) SaveJson(metrics Metrics) (*Metrics, error){
-	response, err := f.MemStore.SaveJson(metrics)
+func (f *FileStorage) SaveJSON(metrics Metrics) (*Metrics, error){
+	response, err := f.MemStore.SaveJSON(metrics)
 	if err != nil {
 		return nil, fmt.Errorf("cannot dave json metric: %w", err)
 	}
 	return response, nil
 }
 
-func (f *FileStorage) GetJson(metrics Metrics) (*Metrics, error){
-	response, err := f.MemStore.GetJson(metrics)
+func (f *FileStorage) GetJSON(metrics Metrics) (*Metrics, error){
+	response, err := f.MemStore.GetJSON(metrics)
 	if err != nil {
 		return nil, fmt.Errorf("cannot dave json metric: %w", err)
 	}

@@ -16,8 +16,8 @@ type Metrics struct{
 
 // Интерфейс для взаимодействия с хранилищем
 type Storage interface {
-	SaveJson(metrics Metrics) (*Metrics, error)
-	GetJson(metrics Metrics) (*Metrics, error)
+	SaveJSON(metrics Metrics) (*Metrics, error)
+	GetJSON(metrics Metrics) (*Metrics, error)
 	SaveMetric(mType, mName, mValue string) error
 	GetMetric(mType, mName string) (string, error)
 	GetAllMetrics() string

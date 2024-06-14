@@ -105,7 +105,7 @@ func (s *MemStorage) GetAllMetrics() string{
 	return html
 }
 
-func (s *MemStorage) SaveJson(metrics Metrics) (*Metrics, error){
+func (s *MemStorage) SaveJSON(metrics Metrics) (*Metrics, error){
 	switch metrics.MType{
 	case "gauge":
 		resp, err := s.UpdateGaugeJSON(metrics)
@@ -177,7 +177,7 @@ func (s *MemStorage) UpdateCounterJSON(metrics Metrics) (*Metrics, error){
 
 }
 
-func (s *MemStorage) GetJson(metrics Metrics) (*Metrics, error){
+func (s *MemStorage) GetJSON(metrics Metrics) (*Metrics, error){
 	switch metrics.MType{
 	case "gauge":
 		resp, err := s.ValueGaugeJSON(metrics)
